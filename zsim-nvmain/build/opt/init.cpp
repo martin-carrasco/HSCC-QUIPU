@@ -351,7 +351,23 @@ MemObject* BuildMemoryController(Config& config, uint32_t lineSize, uint32_t fre
         uint32_t queueDepth = config.get<uint32_t>("sys.mem.queueDepth", 16);
         uint32_t controllerLatency = config.get<uint32_t>("sys.mem.controllerLatency", 10);  // in system cycles
 
-        mem = new DDRMemory(zinfo->lineSize, pageSize, ranksPerChannel, banksPerRank, frequency, tech,addrMapping, controllerLatency, queueDepth, maxRowHits, deferWrites, closedPage, domain, name);
+	bool photonic_channel = config.get<bool>("sys.mem.photonicChannel", false);
+
+	bool nic_channel = config.get<bool>("sys.mem.nicChannel", false);
+	uint32_t serdes_cycles = 0;
+	uint32_t distance_meters = 0;
+	uint32_t nic_cycles = 0;
+
+	if (photonic_channel){
+		serdes_cycles = config.get<uint32_t>("sys.mem.photonicSerdesCycles", 150);
+		distance_meters = config.get<uint32_t>("sys.mem.photonicDistanceMeters", 4);
+	}
+ 	else if(nic_channel){
+		distance_meters = config.get<uint32_t>("sys.mem.nicDistanceMeters", 6);
+		nic_cycles = config.get<uint32_t>("sys.mem.nicCycles", 120);
+	}
+        mem = new DDRMemory(zinfo->lineSize, pageSize, ranksPerChannel, banksPerRank, frequency, tech,addrMapping, controllerLatency, queueDepth, maxRowHits,
+			 	deferWrites, closedPage, photonic_channel, nic_channel, serdes_cycles, distance_meters, nic_cycles, domain, name);
     } else if (type == "DRAMSim") {
         uint64_t cpuFreqHz = 1000000 * frequency;
         uint32_t capacity = config.get<uint32_t>("sys.mem.capacityMB", 16384);
