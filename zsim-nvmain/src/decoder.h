@@ -125,6 +125,7 @@ class Decoder {
         };
 
     public:
+	static uint64_t cntEmitLoad = 0;
         //If oooDecoding is true, produces a DynBbl with DynUops that can be used in OOO cores
         static BblInfo* decodeBbl(BBL bbl, bool oooDecoding);
 

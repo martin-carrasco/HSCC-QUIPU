@@ -36,16 +36,21 @@ SimpleCore::SimpleCore(FilterCache* _l1i, FilterCache* _l1d,
 {
 }
 
+//TODO Add print cnt from decoder
 void SimpleCore::initStats(AggregateStat* parentStat) {
     AggregateStat* coreStat = new AggregateStat();
     coreStat->init(name.c_str(), "Core stats");
     auto x = [this]() -> uint64_t { assert(curCycle >= haltedCycles); return curCycle - haltedCycles; };
+    auto y = [this]() -> uint64_t {return cntEmitLoad;};
     auto cyclesStat = makeLambdaStat(x);
+    auto emitLoadStat = makeLambdaStat(y); // Add parameter
+    emitLoadStat->init("emitLoad", "Simulated emitLoads");
     cyclesStat->init("cycles", "Simulated cycles");
     ProxyStat* instrsStat = new ProxyStat();
     instrsStat->init("instrs", "Simulated instructions", &instrs);
     coreStat->append(cyclesStat);
     coreStat->append(instrsStat);
+    coreStat->append(emitLoadStat);
     parentStat->append(coreStat);
 }
 
@@ -66,6 +71,7 @@ void SimpleCore::bbl(Address bblAddr, BblInfo* bblInfo) {
     //info("%d %d", bblInfo->instrs, bblInfo->bytes);
     instrs += bblInfo->instrs;
     curCycle += bblInfo->instrs;
+    cntEmitLoad += bblInfo->cntEmitLoad;
 
     Address endBblAddr = bblAddr + bblInfo->bytes;
     for (Address fetchAddr = bblAddr; fetchAddr < endBblAddr; fetchAddr+=(1 << lineBits)) {

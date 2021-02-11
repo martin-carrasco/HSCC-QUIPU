@@ -77,6 +77,7 @@ struct CmpByValue
 
 class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain controller
     private:
+	int dram_acc_cnt;
         g_string name;
         uint64_t minLatency;
         uint64_t domain;

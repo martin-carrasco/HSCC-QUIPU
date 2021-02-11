@@ -151,6 +151,7 @@ class SchedEventNVMain : public TimingEvent, public GlobAlloc {
 
 
 NVMainMemory::NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name , std::string fetcher_name) {
+	dram_acc_cnt = 0;
     nvmainConfig = new NVM::Config();
 	mm = NULL;
 	t_fast_read = 0;
@@ -402,6 +403,7 @@ inline void NVMainMemory::filter_based_cache( MemReq& req,
 	}
 }
 
+//TODO Possibility: Add photonic delay to TimingRecord after the changes are done
 inline NVMainAccEvent* NVMainMemory::push_to_main_memory( MemReq& req, uint64_t respCycle )
 {
 	bool is_write = ((req.type == PUTX) || (req.type == PUTS)); 
@@ -439,10 +441,13 @@ uint64_t NVMainMemory::access(MemReq& req) {
     }
 	uint64_t respCycle = req.cycle + minLatency;
     assert(respCycle > req.cycle);
+    //assert(zinfo->hasDRAMCache); // TODO check that this is the value from the config or something else
 
     //if ((zinfo->hasDRAMCache || (req.type != PUTS)) && zinfo->eventRecorders[req.srcId])
     if ((zinfo->hasDRAMCache || (req.type != PUTS)))
 	{
+		dram_acc_cnt++;	
+		std::cout << "current count: " << dram_acc_cnt << endl;
 		//Address addr = req.lineAddr << lineBits;  //physical address
         bool isWrite = ((req.type == PUTX) || (req.type == PUTS));
 		//if( isWrite )
