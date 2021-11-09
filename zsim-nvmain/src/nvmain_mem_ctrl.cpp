@@ -51,6 +51,8 @@
 #include "zsim.h"
 
 NVM::NVMObject* NVMainMemory::fetcher;
+static uint64_t photonicTimestamp;
+static uint64_t currentPhotonicChannel;
 
 class NVMainAccEvent : public TimingEvent {
     private:
@@ -150,8 +152,7 @@ class SchedEventNVMain : public TimingEvent, public GlobAlloc {
 };
 
 
-NVMainMemory::NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name , std::string fetcher_name) {
-	dram_acc_cnt = 0;
+NVMainMemory::NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name , std::string fetcher_name, bool photonic) {
     nvmainConfig = new NVM::Config();
 	mm = NULL;
 	t_fast_read = 0;
@@ -289,6 +290,14 @@ NVMainMemory::NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, 
     info("NVMain: with %f cpuFreq, %f busFreq", cpuFreq, busFreq);
     minLatency = _minLatency;
     domain = _domain;
+	// Enables photonic configuration capabilities
+	if (photonic){
+		photonicSwitch = static_cast<bool>(nvmainConfig->GetBool("PhotonicSwitch"));
+		photonicChannel = static_cast<uint64_t>(nvmainConfig->GetEnergy("PhotonicChannel"));
+		photonicSwitchTime = static_cast<uint64_t>(nvmainConfig->GetEnergy("PhotonicSwitchTime"));
+		photonicSerdesCycles = static_cast<uint64_t>(nvmainConfig->GetEnergy("PhotonicSerderCycles"));
+		photonicDistanceMeters = static_cast<uint64_t>(nvmainConfig->GetEnergy("PhotonicDistanceMeters"));
+	}
 
     // No longer necessary, now we do not tick every cycle, we use SchedEvent
 
@@ -362,6 +371,8 @@ void NVMainMemory::initStats(AggregateStat* parentStat) {
     profTotalWrLat.init("wrlat", "Total latency experienced by write requests"); memStats->append(&profTotalWrLat);
     profMemoryFootprint.init("footprint", "Total memory footprint in bytes"); memStats->append(&profMemoryFootprint);
     profMemoryAddresses.init("addresses", "Total number of distinct memory addresses"); memStats->append(&profMemoryAddresses);
+   	profPhotonicRW.init("photo_rw", "Total number of reads and writes using photonics"); memStats->append(&profPhotonicRW);
+    profPhotonicSwitch.init("photo_switch", "Total number of photonic switches"); memStats->append(&profPhotonicSwitch);
     latencyHist.init("mlh", "latency histogram for memory requests", NUMBINS); memStats->append(&latencyHist);
     addressReuseHist.init("addressReuse", "address reuse histogram for memory requests", NUMBINS); memStats->append(&addressReuseHist);
     parentStat->append(memStats);
@@ -403,7 +414,6 @@ inline void NVMainMemory::filter_based_cache( MemReq& req,
 	}
 }
 
-//TODO Possibility: Add photonic delay to TimingRecord after the changes are done
 inline NVMainAccEvent* NVMainMemory::push_to_main_memory( MemReq& req, uint64_t respCycle )
 {
 	bool is_write = ((req.type == PUTX) || (req.type == PUTS)); 
@@ -441,13 +451,10 @@ uint64_t NVMainMemory::access(MemReq& req) {
     }
 	uint64_t respCycle = req.cycle + minLatency;
     assert(respCycle > req.cycle);
-    //assert(zinfo->hasDRAMCache); // TODO check that this is the value from the config or something else
 
     //if ((zinfo->hasDRAMCache || (req.type != PUTS)) && zinfo->eventRecorders[req.srcId])
     if ((zinfo->hasDRAMCache || (req.type != PUTS)))
 	{
-		dram_acc_cnt++;	
-		std::cout << "current count: " << dram_acc_cnt << endl;
 		//Address addr = req.lineAddr << lineBits;  //physical address
         bool isWrite = ((req.type == PUTX) || (req.type == PUTS));
 		//if( isWrite )
@@ -897,6 +904,41 @@ bool NVMainMemory::RequestComplete(NVM::NVMainRequest *creq) {
     // we are waiting for a request completion.
     //uint64_t lat = curCycle+1 - ev->sCycle;
     uint64_t lat = curCycle+1 - creq->startCycle;
+
+	// Add the time it takes for the switching photonic devices
+	if (photonicSwitch) {
+		info("Inside switch");
+		// Cycle switch
+		profPhotonicRW.inc();
+		if (curCycle+1 - lastPhotonicSwitchTimestamp >= 10000){
+			lastPhotonicSwitchTimestamp=curCycle+1;
+			currentPhotonicChannel=5;
+			profPhotonicSwitch.inc();
+		}
+		if (currentPhotonicChannel != photonicChannel){
+			// Check if another switch happens while already delayed
+			if (photonicTimestamp >= curCycle + 1) {
+					photonicTimestamp += photonicSwitchTime;
+					info("New Timestamp: %li", photonicTimestamp);
+			}
+			else {
+					photonicTimestamp = curCycle+1 + photonicSwitchTime;
+					info("New Timestamp: %li", photonicTimestamp);
+
+			}
+			uint64_t timeDiff = photonicTimestamp - curCycle+1;
+			info("TS: %li , Lat: %li , New Lat: %li", photonicTimestamp, lat, lat+timeDiff);
+			lat += timeDiff;
+		}
+		else {
+			if (photonicTimestamp >= curCycle+1 ) {
+				uint64_t timeDiff = photonicTimestamp - curCycle+1;
+				info("TS: %li , Lat: %li , New Lat: %li", photonicTimestamp, lat, lat+timeDiff);
+				lat += timeDiff;
+			}
+		}
+	}
+
     if (ev->isWrite()) {
         profWrites.inc();
         profTotalWrLat.inc(lat);
@@ -908,8 +950,7 @@ bool NVMainMemory::RequestComplete(NVM::NVMainRequest *creq) {
     }
 
     ev->release();
-    ev->done(curCycle+1);
-
+    ev->done(lat+creq->startCycle);
     if (creq == nextSchedRequest)
         nextSchedRequest = NULL;
 
@@ -932,7 +973,7 @@ void NVMainMemory::printStats() {
 }
 #else //no nvmain, have the class fail when constructed
 NVMainMemory::NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName,
-        uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name)
+        uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name, bool photonic)
 {
     panic("Cannot use NVMainMemory, zsim was not compiled with NVMain");
 }

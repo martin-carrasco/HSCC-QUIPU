@@ -42,16 +42,15 @@ class DDRMemoryAccEvent : public TimingEvent {
     private:
         DDRMemory* mem;
         Address addr;
- 	uint32_t data_size;
         bool write;
 
     public:
-        DDRMemoryAccEvent(DDRMemory* _mem, bool _isWrite, Address _addr, uint32_t _data_size, int32_t domain, uint32_t preDelay, uint32_t postDelay)
-            : TimingEvent(preDelay, postDelay, domain), mem(_mem), addr(_addr), data_size(_data_size),  write(_isWrite) {}
+        DDRMemoryAccEvent(DDRMemory* _mem, bool _isWrite, Address _addr, int32_t domain, uint32_t preDelay, uint32_t postDelay)
+            : TimingEvent(preDelay, postDelay, domain), mem(_mem), addr(_addr), write(_isWrite) {}
 
         Address getAddr() const {return addr;}
         bool isWrite() const {return write;}
-	uint32_t getDataSize() const {return data_size;}
+
         void simulate(uint64_t startCycle) {
             mem->enqueue(this, startCycle);
         }
@@ -115,7 +114,6 @@ class SchedEvent : public TimingEvent, public GlobAlloc {
         void simulate(uint64_t startCycle) {
             if (state == QUEUED) {
                 state = RUNNING;
-		assert(mem);
                 uint64_t nextCycle = mem->tick(startCycle);
                 if (nextCycle) {
                     requeue(nextCycle);
@@ -154,29 +152,20 @@ class SchedEvent : public TimingEvent, public GlobAlloc {
 
 DDRMemory::DDRMemory(uint32_t _lineSize, uint32_t _colSize, uint32_t _ranksPerChannel, uint32_t _banksPerRank,
         uint32_t _sysFreqMHz, const char* tech, const char* addrMapping, uint32_t _controllerSysLatency,
-        uint32_t _queueDepth, uint32_t _rowHitLimit, bool _deferredWrites, bool _closedPage, bool _photonic_channel,
-	bool _nic_channel, uint32_t _serdes_cycles, uint32_t _distance_meters, uint32_t _nic_cycles,
-        uint32_t _domain, g_string& _name, uint32_t _tBL, double time_scale)
+        uint32_t _queueDepth, uint32_t _rowHitLimit, bool _deferredWrites, bool _closedPage,
+        uint32_t _domain, g_string& _name)
     : lineSize(_lineSize), ranksPerChannel(_ranksPerChannel), banksPerRank(_banksPerRank),
       controllerSysLatency(_controllerSysLatency), queueDepth(_queueDepth), rowHitLimit(_rowHitLimit),
-      deferredWrites(_deferredWrites), closedPage(_closedPage),
-      photonic_channel(_photonic_channel), nic_channel(_nic_channel), serdes_cycles(_serdes_cycles), 
-      distance_meters(_distance_meters), nic_cycles(_nic_cycles), 
-      domain(_domain), name(_name)
+      deferredWrites(_deferredWrites), closedPage(_closedPage), domain(_domain), name(_name)
 {
     sysFreqKHz = 1000 * _sysFreqMHz;
-    initTech(tech, time_scale);  // sets all tXX and memFreqKHz
-    tBL = _tBL;
+    initTech(tech);  // sets all tXX and memFreqKHz
     if (memFreqKHz >= sysFreqKHz/2) {
         panic("You may need to tweak the scheduling code, which works with system cycles." \
             "With these frequencies, events (which run on system cycles) can't hit us every memory cycle.");
     }
 
-    distance_cycles = (distance_meters*_sysFreqMHz*(1e-3))/0.2;
-
-    //minRdLatency = controllerSysLatency + memToSysCycle(tCL+tBL-1);
-    minRdLatency = controllerSysLatency + memToSysCycle(tCL+2-1);
-
+    minRdLatency = controllerSysLatency + memToSysCycle(tCL+tBL-1);
     minWrLatency = controllerSysLatency;
     preDelay = controllerSysLatency;
     postDelayRd = minRdLatency - preDelay;
@@ -241,8 +230,6 @@ void DDRMemory::initStats(AggregateStat* parentStat) {
     memStats->init(name.c_str(), "Memory controller stats");
     profReads.init("rd", "Read requests"); memStats->append(&profReads);
     profWrites.init("wr", "Write requests"); memStats->append(&profWrites);
-    bytesReads.init("tot_rd", "Total Bytes Read"); memStats->append(&bytesReads);
-    bytesWrites.init("tot_wr", "Total Bytes Write"); memStats->append(&bytesWrites);
     profTotalRdLat.init("rdlat", "Total latency experienced by read requests"); memStats->append(&profTotalRdLat);
     profTotalWrLat.init("wrlat", "Total latency experienced by write requests"); memStats->append(&profTotalWrLat);
     profReadHits.init("rdhits", "Read row hits"); memStats->append(&profReadHits);
@@ -253,7 +240,7 @@ void DDRMemory::initStats(AggregateStat* parentStat) {
 
 /* Bound phase interface */
 
-uint64_t DDRMemory::access(MemReq& req, int type, uint32_t data_size) {
+uint64_t DDRMemory::access(MemReq& req) {
     switch (req.type) {
         case PUTS:
         case PUTX:
@@ -269,70 +256,19 @@ uint64_t DDRMemory::access(MemReq& req, int type, uint32_t data_size) {
         default: panic("!?");
     }
 
-    assert(data_size % 2 == 0);
     if (req.type == PUTS) {
         return req.cycle; //must return an absolute value, 0 latency
     } else {
         bool isWrite = (req.type == PUTX);
-	uint32_t operation_factor;
-        uint64_t overhead_cycles;
-        overhead_cycles = 0;
-        //distance is half in WR , RD produces roundtrip
-        // info("photonic is %d",photonic_channel); //DEBUG
-	if (photonic_channel){
-            operation_factor = 1;
-            if (lineSize >= 128){
-                operation_factor=lineSize/128; //maximum serdes block size is 64B or 128B
-            }
-            if (isWrite) { //memoperation is WRITE
-                overhead_cycles = ceil(operation_factor*(serdes_cycles*1.07 + distance_cycles/2 + 7));
-            }else{ //memoperation is READ
-                overhead_cycles = ceil(operation_factor*(serdes_cycles*1.07 + distance_cycles + 7));
-            }
-        } else if (nic_channel){
-            if (isWrite) {
-                // info("write");
-                overhead_cycles = ceil(nic_cycles + distance_cycles/2);
-	    }else{
-                // info("read");
-            	overhead_cycles = ceil(nic_cycles + distance_cycles);
-            }
-	} 
-        // TODO If length > 1 cacheline, add 4 cycle for each cacheline
-        uint64_t respCycle = req.cycle + (isWrite? minWrLatency : minRdLatency) + memToSysCycle(data_size - 1) + overhead_cycles;
+        uint64_t respCycle = req.cycle + (isWrite? minWrLatency : minRdLatency);
         if (zinfo->eventRecorders[req.srcId]) {
-		// accessing multiple lines is modeled as multiple requests.
-		// All the requests can be processed in parallel.
-		DDRMemoryAccEvent* memEv = new (zinfo->eventRecorders[req.srcId]) DDRMemoryAccEvent(this,
-		isWrite, req.lineAddr, data_size, domain, preDelay, isWrite? postDelayWr : postDelayRd);
-		if (type == 0) // default. The only record. 
-		{
-			memEv->setMinStartCycle(req.cycle);
-			TimingRecord tr = {req.lineAddr, req.cycle, respCycle, req.type, memEv, memEv};
-			assert(!zinfo->eventRecorders[req.srcId]->hasRecord());
-			zinfo->eventRecorders[req.srcId]->pushRecord(tr);
-		} else if (type == 1) { // append the current event to the end of the previous one
-			TimingRecord tr = zinfo->eventRecorders[req.srcId]->pop_Record();
-			memEv->setMinStartCycle(tr.reqCycle);
-			assert(tr.endEvent);
-			tr.endEvent->addChild(memEv, zinfo->eventRecorders[req.srcId]);
-			// XXX when to update respCycle 
-			//tr.respCycle = respCycle;
-			tr.type = req.type;
-			tr.endEvent = memEv;
-			zinfo->eventRecorders[req.srcId]->pushRecord(tr);
-		} else if (type == 2) {
-			// append the current event to the end of the previous one
-			// but the current event is not on the critical path
-			TimingRecord tr = zinfo->eventRecorders[req.srcId]->pop_Record();
-			memEv->setMinStartCycle(tr.reqCycle);
-			assert(tr.endEvent);
-			tr.endEvent->addChild(memEv, zinfo->eventRecorders[req.srcId]);
-			//tr.respCycle = respCycle;
-			tr.type = req.type;
-			zinfo->eventRecorders[req.srcId]->pushRecord(tr);
-		}
-	}
+            DDRMemoryAccEvent* memEv = new (zinfo->eventRecorders[req.srcId]) DDRMemoryAccEvent(this,
+                    isWrite, req.lineAddr, domain, preDelay, isWrite? postDelayWr : postDelayRd);
+            memEv->setMinStartCycle(req.cycle);
+            TimingRecord tr = {req.lineAddr, req.cycle, respCycle, req.type, memEv, memEv};
+            zinfo->eventRecorders[req.srcId]->pushRecord(tr);
+        }
+        //info("Access to %lx at %ld, %ld latency", req.lineAddr, req.cycle, minLatency);
         return respCycle;
     }
 }
@@ -369,7 +305,6 @@ void DDRMemory::enqueue(DDRMemoryAccEvent* ev, uint64_t sysCycle) {
 
     req->addr = ev->getAddr();
     req->loc = mapLineAddr(ev->getAddr());
-    req->data_size = ev->getDataSize();
     req->write = ev->isWrite();
 
     req->arrivalCycle = memCycle;
@@ -676,7 +611,6 @@ uint64_t DDRMemory::trySchedule(uint64_t curCycle, uint64_t sysCycle) {
 
         uint32_t scDelay = doneSysCycle - r->startSysCycle;
         profReads.inc();
-	bytesReads.inc(16* r->data_size);
         profTotalRdLat.inc(scDelay);
         if (rowHit) profReadHits.inc();
         uint32_t bucket = std::min(NUMBINS-1, scDelay/BINSIZE);
@@ -724,28 +658,14 @@ void DDRMemory::refresh(uint64_t sysCycle) {
 
 /* Tech/Device timing parameters */
 
-void DDRMemory::initTech(const char* techName, double time_scale) {
+void DDRMemory::initTech(const char* techName) {
     std::string tech(techName);
     double tCK;
 
     // tBL's below are for 64-byte lines; we adjust as needed
-   if (tech == "DDR4-2400-CL17") {
-        // From https://github.com/uart/gem5-mirror/blob/master/src/mem/DRAMCtrl.py
-        tCK = 0.833;
-        tBL = 4;
-        tCL = uint32_t(17/time_scale);
-        tRCD = uint32_t(17/time_scale);
-        tRTP = uint32_t(9/time_scale);
-        tRP = uint32_t(17/time_scale);
-        tRRD = uint32_t(4/time_scale);
-        tRAS = uint32_t(38/time_scale);
-        tFAW = uint32_t(28/time_scale);
-        tWTR = uint32_t(6/time_scale);
-        tWR = uint32_t(18/time_scale);
-        tRFC = uint32_t(260/time_scale);
-        tREFI = uint32_t(7800/time_scale);
+
     // Please keep this orderly; go from faster to slower technologies
-    } else if (tech == "DDR3-1333-CL10") {
+    if (tech == "DDR3-1333-CL10") {
         // from DRAMSim2/ini/DDR3_micron_16M_8B_x4_sg15.ini (Micron)
         tCK = 1.5;  // ns; all other in mem cycles
         tBL = 4;
@@ -799,9 +719,6 @@ void DDRMemory::initTech(const char* techName, double time_scale) {
     assert(tCK > 0.0);
     assert(tBL && tCL && tRCD && tRTP && tRP && tRRD && tRAS && tFAW && tWTR && tWR && tRFC && tREFI);
 
-    if(photonic_channel == true){
-	tBL=tBL/2;
-    }
     if (isPow2(lineSize) && lineSize >= 64) {
         tBL = lineSize*tBL/64;
     } else if (lineSize == 32) {

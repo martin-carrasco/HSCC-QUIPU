@@ -118,10 +118,8 @@ void Decoder::reportUnhandledCase(Instr& instr, const char* desc) {
             instr.numOutRegs, regsToString(instr.outRegs, instr.numOutRegs).c_str());
 }
 
-// Make a counter to count the times memory is loaded (one for each core)
 void Decoder::emitLoad(Instr& instr, uint32_t idx, DynUopVec& uops, uint32_t destReg) {
     assert(idx < instr.numLoads);
-    Decoder::cntEmitLoad++;
     uint32_t op = instr.loadOps[idx];
     uint32_t baseReg = INS_OperandMemoryBaseReg(instr.ins, op);
     uint32_t indexReg = INS_OperandMemoryIndexReg(instr.ins, op);
@@ -1449,7 +1447,6 @@ BblInfo* Decoder::decodeBbl(BBL bbl, bool oooDecoding) {
     //Initialize generic part
     bblInfo->instrs = instrs;
     bblInfo->bytes = bytes;
-    bblInfo->cntEmitLoad = Decoder::cntEmitLoad;
 
     return bblInfo;
 }

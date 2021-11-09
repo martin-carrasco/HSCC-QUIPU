@@ -86,14 +86,6 @@ class EventRecorder : public GlobAlloc {
         void popRecord() {
             trStack.pop_back();
         }
-	inline size_t hasRecord() const {
-		return trStack.size() > 0;
-	}
-	inline TimingRecord pop_Record() __attribute__((always_inline)) {
-		TimingRecord rec = trStack.back();	
-		trStack.pop_back();
-		return rec;
-	}
 
         inline size_t numRecords() const {
             return trStack.size();

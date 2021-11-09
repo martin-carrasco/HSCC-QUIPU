@@ -38,10 +38,9 @@ class SimpleCore : public Core {
         FilterCache* l1i;
         FilterCache* l1d;
 		
-	BaseTlb* itlb;
-	BaseTlb* dtlb;
+		BaseTlb* itlb;
+		BaseTlb* dtlb;
 
-	uint64_t cntEmitLoad;
         uint64_t instrs;
         uint64_t curCycle;
         uint64_t phaseEndCycle; //next stopping point

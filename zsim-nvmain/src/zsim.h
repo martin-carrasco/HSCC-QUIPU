@@ -263,6 +263,9 @@ struct GlobSimInfo {
 	g_unordered_map<uint32_t, g_list<Content*> > reversed_pgt;
 	lock_t reversed_pgt_lock; 
 	unsigned mem_access_time;
+
+    // Photonic memory settings
+    bool photonic;
 };
 
 

@@ -351,23 +351,7 @@ MemObject* BuildMemoryController(Config& config, uint32_t lineSize, uint32_t fre
         uint32_t queueDepth = config.get<uint32_t>("sys.mem.queueDepth", 16);
         uint32_t controllerLatency = config.get<uint32_t>("sys.mem.controllerLatency", 10);  // in system cycles
 
-	bool photonic_channel = config.get<bool>("sys.mem.photonicChannel", false);
-
-	bool nic_channel = config.get<bool>("sys.mem.nicChannel", false);
-	uint32_t serdes_cycles = 0;
-	uint32_t distance_meters = 0;
-	uint32_t nic_cycles = 0;
-
-	if (photonic_channel){
-		serdes_cycles = config.get<uint32_t>("sys.mem.photonicSerdesCycles", 150);
-		distance_meters = config.get<uint32_t>("sys.mem.photonicDistanceMeters", 4);
-	}
- 	else if(nic_channel){
-		distance_meters = config.get<uint32_t>("sys.mem.nicDistanceMeters", 6);
-		nic_cycles = config.get<uint32_t>("sys.mem.nicCycles", 120);
-	}
-        mem = new DDRMemory(zinfo->lineSize, pageSize, ranksPerChannel, banksPerRank, frequency, tech,addrMapping, controllerLatency, queueDepth, maxRowHits,
-			 	deferWrites, closedPage, photonic_channel, nic_channel, serdes_cycles, distance_meters, nic_cycles, domain, name);
+        mem = new DDRMemory(zinfo->lineSize, pageSize, ranksPerChannel, banksPerRank, frequency, tech,addrMapping, controllerLatency, queueDepth, maxRowHits, deferWrites, closedPage, domain, name);
     } else if (type == "DRAMSim") {
         uint64_t cpuFreqHz = 1000000 * frequency;
         uint32_t capacity = config.get<uint32_t>("sys.mem.capacityMB", 16384);
@@ -383,7 +367,8 @@ MemObject* BuildMemoryController(Config& config, uint32_t lineSize, uint32_t fre
         nvmainTechIni = replace(nvmainTechIni, envVar, getenv(envVar.c_str())? getenv(envVar.c_str()): "");
         string outputFile = config.get<const char*>("sys.mem.outputFile");
         string traceName = config.get<const char*>("sys.mem.traceName");
-        mem = new NVMainMemory(nvmainTechIni, outputFile, traceName, capacity, latency, domain, name);
+		bool photonic = config.get<bool>("sys.mem.photonic", false);
+        mem = new NVMainMemory(nvmainTechIni, outputFile, traceName, capacity, latency, domain, name, "Block Fetcher", photonic);
     } else if (type == "Detailed") {
         // FIXME(dsm): Don't use a separate config file... see DDRMemory
         g_string mcfg = config.get<const char*>("sys.mem.paramFile", "");
@@ -548,6 +533,8 @@ static void InitSystem(Config& config) {
 	zinfo->memory_size = 0;
     zinfo->hasNVMain = (config.get<const char*>("sys.mem.type", "Simple") == string("NVMain")) ? true : false;
     zinfo->hasDRAMCache = config.get<bool>("sys.mem.hasDRAMCache", false);
+    zinfo->photonic = config.get<bool>("sys.mem.photonic", false);
+
 	//####config HSCH-fairness
 	zinfo->proc_fairness = config.get<bool>("sys.proc_fairness",false);
     for (uint32_t i = 0; i < memControllers; i++) {
@@ -964,6 +951,8 @@ static void InitSystem(Config& config) {
     info("Initialized system");
 	//init memory system
 	debug_printf("begin init memory management");
+    if (zinfo->photonic)
+        info("photonic memory mode enabled")
 	for( int i=0 ; i<MAX_NR_ZONES ; i++)
 	{
 		zinfo->max_zone_pfns[i] = 0;
@@ -1009,6 +998,7 @@ static void InitSystem(Config& config) {
 		info("memory size is %ld",zinfo->memory_size);
 		//debug_printf("number of pages is %ld",zinfo->memory_node->node_page_num);
 		debug_printf("init memory node and memory done");
+
 	}
 	else
 	{

@@ -77,7 +77,6 @@ struct CmpByValue
 
 class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain controller
     private:
-	int dram_acc_cnt;
         g_string name;
         uint64_t minLatency;
         uint64_t domain;
@@ -119,6 +118,8 @@ class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain cont
         Counter profTotalWrLat;
         Counter profMemoryFootprint;
         Counter profMemoryAddresses;
+        Counter profPhotonicRW;
+        Counter profPhotonicSwitch;
         VectorCounter latencyHist;
         VectorCounter addressReuseHist;
         static const uint64_t BINSIZE = 10, NUMBINS = 100;
@@ -136,6 +137,12 @@ class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain cont
 		uint64_t previous_caching;
 		std::ofstream fdrc;
 		std::ofstream fnvm;
+		bool photonicSwitch;
+		uint64_t photonicSwitchTime;
+		uint64_t photonicSerdesCycles;
+		uint64_t photonicDistanceMeters;
+		uint64_t photonicChannel;
+
 	public:
 		uint64_t nvmain_access_count,nvmain_read_access_count,nvmain_write_access_count;
 		uint64_t request_complete;
@@ -143,7 +150,7 @@ class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain cont
 		uint64_t issued_num;
     public:
         //NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name);
-        NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name , std::string fetcher_name="BlockFetcher");	
+        NVMainMemory(std::string& nvmainTechIni, std::string& outputFile, std::string& traceName, uint32_t capacityMB, uint64_t _minLatency, uint32_t _domain, const g_string& _name , std::string fetcher_name="BlockFetcher", bool photonic=false);	
 			
         const char* getName() {return name.c_str();}
 		virtual NVM::NVMain* GetNVMainPtr(){ return nvmainPtr; }

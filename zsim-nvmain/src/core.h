@@ -36,7 +36,6 @@ class BasePaging;
 struct BblInfo {
     uint32_t instrs; 
     uint32_t bytes;
-    uint64_t cntEmitLoad; 
     DynBbl oooBbl[0]; //0 bytes, but will be 1-sized when we have an element (and that element has variable size as well)
 };
 

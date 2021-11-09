@@ -15,7 +15,7 @@ def buildSim(cppFlags, dir, type, pgo=None):
     ''' Build the simulator with a specific base buid dir and config type'''
 
     buildDir = joinpath(dir, type)
-    print("Building " + type + " zsim at " + buildDir)
+    print "Building " + type + " zsim at " + buildDir
 
     env = Environment(ENV = os.environ)
     env["CPPFLAGS"] = cppFlags
@@ -28,7 +28,6 @@ def buildSim(cppFlags, dir, type, pgo=None):
     else:
         env.Command(versionFile, allSrcs + ["SConstruct"],
             'echo -e "#define ZSIM_BUILDDATE \\""`date`\\""\\\\n#define ZSIM_BUILDVERSION \\""no git repo\\""" >>' + versionFile)
-
 
     # Parallel builds?
     #env.SetOption('num_jobs', 32)
@@ -47,12 +46,10 @@ def buildSim(cppFlags, dir, type, pgo=None):
     if "PINPATH" in os.environ:
         PINPATH = os.environ["PINPATH"]
     else:
-       print("ERROR: You need to define the $PINPATH environment variable with Pin's path")
+       print "ERROR: You need to define the $PINPATH environment variable with Pin's path"
        sys.exit(1)
 
     ROOT = Dir('.').abspath
-    
-    env["CPPFLAGS"] += " -fabi-version=2  -D_GLIBCXX_USE_CXX11_ABI=0"
 
     # NOTE: These flags are for the 28/02/2011 2.9 PIN kit (rev39599). Older versions will not build.
     # NOTE (dsm 10 Jan 2013): Tested with Pin 2.10 thru 2.12 as well
@@ -82,7 +79,8 @@ def buildSim(cppFlags, dir, type, pgo=None):
 
     # Enables lib and harness to use the same info/log code,
     # but only lib uses pin locks for thread safety
-    env["PINCPPFLAGS"] = " -DMT_SAFE_LOG "
+		# -fabi-version=2 added to avoid ABI messages 
+    env["PINCPPFLAGS"] = " -fabi-version=2 -DMT_SAFE_LOG "
 
     # PIN-specific libraries
     env["PINLINKFLAGS"] = " -Wl,--hash-style=sysv -Wl,-Bsymbolic -Wl,--version-script=" + joinpath(pinInclDir, "pintool.ver")
@@ -174,10 +172,11 @@ def buildSim(cppFlags, dir, type, pgo=None):
         env["CPPFLAGS"] += ' -DZSIM_PATH="' + joinpath(ROOT,"bin/libzsim.so") + '" '
 
     # Boost regex
-    BOOST = os.environ["BOOST"]
-    include_path = os.environ['BOOST']+"/include"
-    lib_path = os.environ['BOOST']+"/lib"
+	boost_path = os.environ['BOOST']
+    include_path = os.environ['BOOST_INCLUDE']
+    lib_path = os.environ['BOOST_LIB']
     env["CPPPATH"] += [include_path]
+    env["CPPPATH"] += [boost_path]
     env["LIBPATH"] += [lib_path]
     env["LIBS"] += ["boost_regex"]
     print("env[cpppath]%s" % env["CPPPATH"])
@@ -229,11 +228,11 @@ pgoPhase = GetOption('pgoPhase')
 # when you move the files. Check the repo for a version that tries this.
 if GetOption('pgoBuild'):
     for type in buildTypes:
-        print("Building PGO binary")
+        print "Building PGO binary"
         root = Dir('.').abspath
         testsDir = joinpath(root, "tests")
         trainCfgs = [f for f in os.listdir(testsDir) if f.startswith("pgo")]
-        print("Using training configs", trainCfgs)
+        print "Using training configs", trainCfgs
         
         baseDir = joinpath(baseBuildDir, "pgo-" + type)
         genCmd = "scons -j16 --pgoPhase=generate-" + type

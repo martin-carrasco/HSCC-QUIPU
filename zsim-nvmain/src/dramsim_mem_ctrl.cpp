@@ -114,7 +114,8 @@ uint64_t DRAMSimMemory::access(MemReq& req) {
     if ((req.type != PUTS /*discard clean writebacks*/) && zinfo->eventRecorders[req.srcId]) {
         Address addr = req.lineAddr << lineBits;
         bool isWrite = (req.type == PUTX);
-        DRAMSimAccEvent* memEv = new (zinfo->eventRecorders[req.srcId]) DRAMSimAccEvent(this, isWrite, addr, domain);
+        DRAMSimAccEvent* memEv = new (zinfo->eventRecorders[req.srcId])
+        DRAMSimAccEvent(this, isWrite, addr, domain);
         memEv->setMinStartCycle(req.cycle);
         TimingRecord tr = {addr, req.cycle, respCycle, req.type, memEv, memEv};
         zinfo->eventRecorders[req.srcId]->pushRecord(tr);
