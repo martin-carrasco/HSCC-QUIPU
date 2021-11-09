@@ -1,3 +1,8 @@
 boost_1_59_0/**
 **/zsim-nvmain/bin/**
 **/zsim-nvmain/build/**
+documents/HSCC.pdf
+zsim-nvmain/.sconsign.dblite
+zsim-nvmain/config/nvmain-config/dram_photo/DRAM_channel.config.bk
+zsim-nvmain/pin_kit/pin.log
+zsim-nvmain/.sconsign.dblite
