@@ -51,8 +51,9 @@
 #include "zsim.h"
 
 NVM::NVMObject* NVMainMemory::fetcher;
-static uint64_t photonicTimestamp;
-static uint64_t currentPhotonicChannel;
+uint64_t NVMainMemory::photonicTimestamp = 0;
+uint64_t NVMainMemory::currentPhotonicChannel = 0;
+uint64_t NVMainMemory::lastPhotonicSwitchTimestamp = 0;
 
 class NVMainAccEvent : public TimingEvent {
     private:
@@ -416,6 +417,7 @@ inline void NVMainMemory::filter_based_cache( MemReq& req,
 
 inline NVMainAccEvent* NVMainMemory::push_to_main_memory( MemReq& req, uint64_t respCycle )
 {
+
 	bool is_write = ((req.type == PUTX) || (req.type == PUTS)); 
 	Address addr = req.lineAddr << lineBits;  //physical address
 	NVMainAccEvent* memEv = new (zinfo->eventRecorders[req.srcId])
@@ -449,8 +451,33 @@ uint64_t NVMainMemory::access(MemReq& req) {
             break;
         default: panic("!?");
     }
+	// Check if photonic switching is enabled in this memory bank
+	if (photonicSwitch) {
+		profPhotonicRW.inc();
+		// If channel is differnt that this memory bank channel, make a switch
+		if (NVMainMemory::currentPhotonicChannel != photonicChannel){
+			// Check if another switch happens while already delayed
+			if (NVMainMemory::photonicTimestamp >= req.cycle) {
+					NVMainMemory::photonicTimestamp += photonicSwitchTime;
+					info("New Timestamp: %li", NVMainMemory::photonicTimestamp);
+			}
+			// Add delay to timestamp
+			else {
+					NVMainMemory::photonicTimestamp = req.cycle + photonicSwitchTime;
+					info("New Timestamp: %li", NVMainMemory::photonicTimestamp);
+
+			}
+			// Change photonic channel to current and move req.cycle to timestamp
+			NVMainMemory::currentPhotonicChannel = photonicChannel;
+			uint64_t timeDiff = NVMainMemory::photonicTimestamp - req.cycle;
+			req.cycle = NVMainMemory::photonicTimestamp;
+			info("TS: %li , Cycle: %li , Lat: %li", NVMainMemory::photonicTimestamp, req.cycle, timeDiff);
+		}
+	}
+	info("Current cycle: %li", req.cycle);
 	uint64_t respCycle = req.cycle + minLatency;
     assert(respCycle > req.cycle);
+
 
     //if ((zinfo->hasDRAMCache || (req.type != PUTS)) && zinfo->eventRecorders[req.srcId])
     if ((zinfo->hasDRAMCache || (req.type != PUTS)))
@@ -906,39 +933,6 @@ bool NVMainMemory::RequestComplete(NVM::NVMainRequest *creq) {
     uint64_t lat = curCycle+1 - creq->startCycle;
 
 	// Add the time it takes for the switching photonic devices
-	if (photonicSwitch) {
-		info("Inside switch");
-		// Cycle switch
-		profPhotonicRW.inc();
-		if (curCycle+1 - lastPhotonicSwitchTimestamp >= 10000){
-			lastPhotonicSwitchTimestamp=curCycle+1;
-			currentPhotonicChannel=5;
-			profPhotonicSwitch.inc();
-		}
-		if (currentPhotonicChannel != photonicChannel){
-			// Check if another switch happens while already delayed
-			if (photonicTimestamp >= curCycle + 1) {
-					photonicTimestamp += photonicSwitchTime;
-					info("New Timestamp: %li", photonicTimestamp);
-			}
-			else {
-					photonicTimestamp = curCycle+1 + photonicSwitchTime;
-					info("New Timestamp: %li", photonicTimestamp);
-
-			}
-			uint64_t timeDiff = photonicTimestamp - curCycle+1;
-			info("TS: %li , Lat: %li , New Lat: %li", photonicTimestamp, lat, lat+timeDiff);
-			lat += timeDiff;
-		}
-		else {
-			if (photonicTimestamp >= curCycle+1 ) {
-				uint64_t timeDiff = photonicTimestamp - curCycle+1;
-				info("TS: %li , Lat: %li , New Lat: %li", photonicTimestamp, lat, lat+timeDiff);
-				lat += timeDiff;
-			}
-		}
-	}
-
     if (ev->isWrite()) {
         profWrites.inc();
         profTotalWrLat.inc(lat);
@@ -950,7 +944,7 @@ bool NVMainMemory::RequestComplete(NVM::NVMainRequest *creq) {
     }
 
     ev->release();
-    ev->done(lat+creq->startCycle);
+    ev->done(curCycle+1);
     if (creq == nextSchedRequest)
         nextSchedRequest = NULL;
 

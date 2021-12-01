@@ -144,6 +144,9 @@ class NVMainMemory : public MemObject, public NVM::NVMObject { //one NVMain cont
 		uint64_t photonicChannel;
 
 	public:
+		static uint64_t photonicTimestamp;
+		static uint64_t currentPhotonicChannel;
+		static uint64_t lastPhotonicSwitchTimestamp;
 		uint64_t nvmain_access_count,nvmain_read_access_count,nvmain_write_access_count;
 		uint64_t request_complete;
 		uint64_t recorder_num;

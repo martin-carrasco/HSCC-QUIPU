@@ -621,6 +621,7 @@ VOID Instruction(INS ins) {
      * is never emitted by any x86 compiler, as they use other (recommended) nop
      * instructions or sequences.
      */
+    // MAGIC OP
     if (INS_IsXchg(ins) && INS_OperandReg(ins, 0) == LEVEL_BASE::REG_RCX && INS_OperandReg(ins, 1) == LEVEL_BASE::REG_RCX) {
         //info("Instrumenting magic op");
         INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) HandleMagicOp, IARG_THREAD_ID, IARG_REG_VALUE, REG_ECX, IARG_END);
@@ -1417,9 +1418,23 @@ VOID SimEnd() {
 #define ZSIM_MAGIC_OP_ROI_END           (1026)
 #define ZSIM_MAGIC_OP_REGISTER_THREAD   (1027)
 #define ZSIM_MAGIC_OP_HEARTBEAT         (1028)
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_ON                (1034)
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_OFF               (1035)
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_INC_CHANNEL       (1036)
 
 VOID HandleMagicOp(THREADID tid, ADDRINT op) {
     switch (op) {
+        // Enable or disable photonic switching by changing the channel
+        // The default channel in the configuration is number 1
+        case ZSIM_MAGIC_OP_PHOTONIC_SWITCH_ON:
+            NVMainMemory::currentPhotonicChannel = 0;
+            return; 
+        case ZSIM_MAGIC_OP_PHOTONIC_SWITCH_OFF:
+            NVMainMemory::currentPhotonicChannel = 1;
+            return;
+        case ZSIM_MAGIC_OP_PHOTONIC_SWITCH_INC_CHANNEL:
+            NVMainMemory::currentPhotonicChannel += 1; 
+            return;
         case ZSIM_MAGIC_OP_ROI_BEGIN:
             if (!zinfo->ignoreHooks) {
                 //TODO: Test whether this is thread-safe

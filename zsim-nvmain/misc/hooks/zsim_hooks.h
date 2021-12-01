@@ -14,6 +14,9 @@
 #define ZSIM_MAGIC_OP_HEARTBEAT         (1028)
 #define ZSIM_MAGIC_OP_WORK_BEGIN        (1029) //ubik
 #define ZSIM_MAGIC_OP_WORK_END          (1030) //ubik
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_ON                (1034)
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_OFF               (1035)
+#define ZSIM_MAGIC_OP_PHOTONIC_SWITCH_INC_CHANNEL       (1036)
 
 #ifdef __x86_64__
 #define HOOKS_STR  "HOOKS"
@@ -28,6 +31,21 @@ static inline void zsim_magic_op(uint64_t op) {
     //NOP
 }
 #endif
+
+static inline void zsim_roi_photonic_switch_on() {
+    printf("[" HOOKS_STR "] PHOTONIC SWITCH on\n");
+    zsim_magic_op(ZSIM_MAGIC_OP_PHOTONIC_SWITCH_ON);
+}
+
+static inline void zsim_roi_photonic_switch_off() {
+    printf("[" HOOKS_STR "] PHOTONIC SWITCH off\n");
+    zsim_magic_op(ZSIM_MAGIC_OP_PHOTONIC_SWITCH_OFF);
+}
+
+static inline void zsim_roi_photonic_switch_inc_channel() {
+    printf("[" HOOKS_STR "] PHOTONIC SWITCH INC channel\n");
+    zsim_magic_op(ZSIM_MAGIC_OP_PHOTONIC_SWITCH_INC_CHANNEL);
+}
 
 static inline void zsim_roi_begin() {
     printf("[" HOOKS_STR "] ROI begin\n");
